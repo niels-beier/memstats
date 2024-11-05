@@ -101,4 +101,10 @@ if(memstats_IS_TOP_LEVEL)
         target_link_libraries(example_03 PUBLIC MemStats::MemStats)
         target_compile_features(example_03 PUBLIC cxx_std_11)
     endif()
+
+    add_executable(example_04 example_04.cc)
+    target_link_libraries(example_04 PUBLIC MemStats::MemStats)
+
+    add_executable(example_05 example_05.cc)
+    target_link_libraries(example_05 PUBLIC MemStats::MemStats)
 endif()

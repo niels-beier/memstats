@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cassert>
@@ -301,11 +302,35 @@ void print_legend()
                 << (i + 1 == str_precentage.second ? ']' : ')') << std::endl;
 }
 
+void report_never_freed() {
+    std::cout << "\nNever freed pointers:\n";
+
+    // Report allocations without deallocations
+    for (int i = 0; i < memstats_events.size(); ++i) {
+        // Skip deallocations (only allocations can have size > 0)
+        if (memstats_events[i].size == 0) continue;
+        bool freed = false;
+        for (int j = i + 1; j < memstats_events.size(); ++j) {
+            if (memstats_events[i].ptr == memstats_events[j].ptr && memstats_events[j].size == 0) {
+                freed = true;
+            }
+        }
+
+        if (!freed) {
+            std::cout << "Pointer " << memstats_events[i].ptr << " was never freed in Thread " << memstats_events[i].thread << "." << std::endl;
+#if MEMSTAT_HAVE_STACKTRACE
+            std::cout << "Current stacktrace:\n" << memstats_events[i].stacktrace << std::endl;
+#endif
+        }
+    }
+}
+
 void memstats_report(const char * report_name)
 {
     auto lock = std::unique_lock<std::recursive_mutex>{memstats_lock};
     if (memstats_events.size() == 0)
         return;
+
     std::cout << "\n------------------- MemStats " << report_name << " -------------------\n";
     struct Stats
     {
@@ -314,6 +339,12 @@ void memstats_report(const char * report_name)
     };
     Stats global_stats;
     unordered_map<std::thread::id, Stats> thread_stats;
+    unordered_map<const void *, std::pair<int, bool>> ptr_collec;
+    struct PtrStats {
+        int times_freed;
+        const void *ptr;
+    };
+    std::vector<PtrStats> ptr_stats;
 #if MEMSTAT_HAVE_STACKTRACE
     unordered_map<std::basic_stacktrace<MallocAllocator<std::stacktrace_entry>>, Stats> stacktrace_stats;
     unordered_map<std::stacktrace_entry, Stats> stacktrace_entry_stats;
@@ -333,14 +364,24 @@ void memstats_report(const char * report_name)
         register_stats(global_stats);
         register_stats(thread_stats[info.thread]);
 
+        if (ptr_collec[info.ptr].second && info.size > 0) {
+            PtrStats stats = {ptr_collec[info.ptr].first, info.ptr};
+            ptr_stats.push_back(stats);
+            ptr_collec[info.ptr].first = 0;
+            ptr_collec[info.ptr].second = false;
+        } else if (info.size == 0) {
+            ++ptr_collec[info.ptr].first;
+            ptr_collec[info.ptr].second = true;
+        }
+
+
+
 #if MEMSTAT_HAVE_STACKTRACE
         register_stats(stacktrace_stats[info.stacktrace]);
         for (auto entry : info.stacktrace)
             register_stats(stacktrace_entry_stats[entry]);
 #endif
     }
-    // clean up vector
-    memstats_events.clear();
 
     static const std::array<char, 11> metric_prefix{' ', 'k', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y', 'R', 'Q'};
     auto bytes_to_string = [&](std::size_t bytes)
@@ -412,6 +453,21 @@ void memstats_report(const char * report_name)
       }
     }
 #endif
+
+    report_never_freed();
+
+    std::cout << "\nDouble freed pointers:\n";
+
+    // Report double deallocations
+    for (const auto& entry : ptr_stats)
+    {
+        if (entry.times_freed > 1)
+            std::cout << "Pointer " << entry.ptr << " was freed " << entry.times_freed << " times." << std::endl;
+    }
+
+    // clean up vector
+    memstats_events.clear();
+
     // avoid printing legend several times, so call once at exit
     static std::once_flag legend_flag;
     std::call_once(legend_flag, []()
