@@ -130,6 +130,7 @@ MEMSTATS_CONSTINIT
 #endif
 static std::vector<MemStatsInfo, MallocAllocator<MemStatsInfo>> memstats_events = {};
 #endif
+std::atomic<bool> memstats_events_ready = true;
 
 // Zero- and dynamic-initialization of a thread-local variable does not necessarily happen on any order related to the global ones
 static thread_local bool memstats_instrumentation_thread = init_memstats_instrumentation_thread();
@@ -262,6 +263,11 @@ unsigned short memstats_bins()
 
 void MemStatsInfo::record(void *ptr, std::size_t sz)
 {
+    // Wait until all writing steps to memstats_events are done
+    while (!memstats_events_ready.load(std::memory_order_acquire))
+        std::this_thread::yield();
+
+    memstats_events_ready.store(false, std::memory_order_release);
     auto time = std::chrono::high_resolution_clock::now();
     MemStatsInfo info;
     info.ptr = ptr;
@@ -275,6 +281,8 @@ void MemStatsInfo::record(void *ptr, std::size_t sz)
     std::unique_lock<std::recursive_mutex> lk{memstats_lock};
 #endif
     memstats_events.emplace_back(std::move(info));
+
+    memstats_events_ready.store(true, std::memory_order_release);
 }
 
 template <class Key, class T>
