@@ -310,8 +310,8 @@ void print_legend()
                 << (i + 1 == str_precentage.second ? ']' : ')') << std::endl;
 }
 
-void report_never_freed() {
-    std::cout << "\nNever freed pointers:\n";
+void report_memory_leaks() {
+    std::cout << "\nMemory leaks:\n";
 
     // Report allocations without deallocations
     for (int i = 0; i < memstats_events.size(); ++i) {
@@ -319,7 +319,7 @@ void report_never_freed() {
         if (memstats_events[i].size == 0) continue;
         bool freed = false;
         for (int j = i + 1; j < memstats_events.size(); ++j) {
-            if (memstats_events[i].ptr == memstats_events[j].ptr && memstats_events[j].size == 0) {
+            if (memstats_events[i].ptr == memstats_events[j].ptr && memstats_events[j].size == 0 && memstats_events[i].thread == memstats_events[j].thread) {
                 freed = true;
             }
         }
@@ -347,7 +347,7 @@ void memstats_report(const char * report_name)
     };
     Stats global_stats;
     unordered_map<std::thread::id, Stats> thread_stats;
-    unordered_map<const void *, std::pair<int, bool>> ptr_collec;
+    unordered_map<const void *, unordered_map<std::thread::id, std::pair<int, bool>>> ptr_collec;
     struct PtrStats {
         int times_freed;
         const void *ptr;
@@ -357,6 +357,7 @@ void memstats_report(const char * report_name)
     unordered_map<std::basic_stacktrace<MallocAllocator<std::stacktrace_entry>>, Stats> stacktrace_stats;
     unordered_map<std::stacktrace_entry, Stats> stacktrace_entry_stats;
 #endif
+
     for (const MemStatsInfo &info : memstats_events)
     {
         auto register_stats = [&](Stats &stats)
@@ -372,14 +373,14 @@ void memstats_report(const char * report_name)
         register_stats(global_stats);
         register_stats(thread_stats[info.thread]);
 
-        if (ptr_collec[info.ptr].second && info.size > 0) {
-            PtrStats stats = {ptr_collec[info.ptr].first, info.ptr};
+        if (ptr_collec[info.ptr][info.thread].second && info.size > 0) {
+            PtrStats stats = {ptr_collec[info.ptr][info.thread].first, info.ptr};
             ptr_stats.push_back(stats);
-            ptr_collec[info.ptr].first = 0;
-            ptr_collec[info.ptr].second = false;
+            ptr_collec[info.ptr][info.thread].first = 0;
+            ptr_collec[info.ptr][info.thread].second = false;
         } else if (info.size == 0) {
-            ++ptr_collec[info.ptr].first;
-            ptr_collec[info.ptr].second = true;
+            ++ptr_collec[info.ptr][info.thread].first;
+            ptr_collec[info.ptr][info.thread].second = true;
         }
 
 
@@ -462,7 +463,7 @@ void memstats_report(const char * report_name)
     }
 #endif
 
-    report_never_freed();
+    report_memory_leaks();
 
     std::cout << "\nDouble freed pointers:\n";
 
