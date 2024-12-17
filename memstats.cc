@@ -482,7 +482,7 @@ bool memstats_do_instrument() {
 // instrumentation of new
 void *operator new(std::size_t sz) {
     // prevent multiple thread from allocating memory at the same time s.t. events are in order
-    std::lock_guard<std::mutex> lock(memstats_events_mutex);
+    //std::lock_guard<std::mutex> lock(memstats_events_mutex);
 
     if (sz == 0)
         sz = 1;
@@ -512,7 +512,7 @@ void *operator new(std::size_t sz, std::nothrow_t) noexcept {
 // instrumentation of delete
 void operator delete(void *ptr) noexcept {
     // prevent multiple thread from deallocating memory at the same time s.t. events are in order
-    std::lock_guard<std::mutex> lock(memstats_events_mutex);
+    //std::lock_guard<std::mutex> lock(memstats_events_mutex);
 
     if (memstats_do_instrument())
         MemStatsInfo::record(ptr);
