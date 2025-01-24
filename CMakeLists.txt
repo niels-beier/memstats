@@ -88,6 +88,13 @@ export(EXPORT memstats-targets
        NAMESPACE MemStats::
 )
 
+set(PINTOOL_HEADER_PATH "" CACHE PATH "")
+
+if (NOT PINTOOL_HEADER_PATH)
+    message(FATAL_ERROR "For using memstats with the pintool, the path to pin.H is required.")
+endif()
+
+include_directories(${PINTOOL_HEADER_PATH})
 
 if(memstats_IS_TOP_LEVEL)
     add_executable(example_01 example_01.cc)
