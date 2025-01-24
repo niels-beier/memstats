@@ -39,6 +39,7 @@
 #endif
 
 #include "memstats.hh"
+#include "memorytracer.hh"
 
 // all allocations within this library need to use malloc/free instad of new/delete
 template<class T>
@@ -93,6 +94,8 @@ struct MemStatsInfo {
 };
 
 bool init_memstats_instrumentation_thread() {
+    const MemoryTracerGuard guard;
+
     if (char *ptr = std::getenv("MEMSTATS_THREAD_INSTRUMENTATION_INIT")) {
         if (std::strcmp(ptr, "true") == 0 or std::strcmp(ptr, "1") == 0)
             return true;
@@ -137,6 +140,8 @@ static thread_local bool memstats_instrumentation_thread = init_memstats_instrum
 
 // guard thread-local variable to instrument further delets at exit
 bool init_memstats_instrumentation_thread_guard() {
+    const MemoryTracerGuard guard;
+
     std::atexit([] { memstats_instrumentation_thread = false; });
     return true;
 }
@@ -152,6 +157,8 @@ MEMSTATS_CONSTINIT static std::atomic<bool> memstats_instrumentation_global{fals
 #endif
 
 bool init_memstats_instrumentation_guard() {
+    const MemoryTracerGuard guard;
+
     bool instrument = false;
     // Note this variable is const-initialized to false. Here we change it to true and syncronize other threads during dynamic initialization
     if (char *ptr = std::getenv("MEMSTATS_ENABLE_INSTRUMENTATION")) {
@@ -175,6 +182,8 @@ bool init_memstats_instrumentation_guard() {
 static bool memstats_instrumentation_guard = init_memstats_instrumentation_guard();
 
 bool init_memstats_at_exit() {
+    const MemoryTracerGuard guard;
+
     static std::once_flag report_flag;
     std::call_once(report_flag,
                    [] {
@@ -225,6 +234,8 @@ static const std::array<const char *, 10> memstats_str_precentage_number{"0", "1
                                                                          "9"};
 
 std::pair<char const *const *, std::size_t> memstats_str_hist_representation() {
+    const MemoryTracerGuard guard;
+
     if (const char *ptr = std::getenv("MEMSTATS_HISTOGRAM_REPRESENTATION")) {
         if (std::strcmp(ptr, "box") == 0)
             return std::make_pair(memstats_str_precentage_box.data(), memstats_str_precentage_box.size());
@@ -245,6 +256,8 @@ std::pair<char const *const *, std::size_t> memstats_str_hist_representation() {
 }
 
 unsigned short memstats_bins() {
+    const MemoryTracerGuard guard;
+
     if (const char *ptr = std::getenv("MEMSTATS_BINS")) {
         try {
             return std::stoi(ptr);
@@ -257,6 +270,8 @@ unsigned short memstats_bins() {
 }
 
 void MemStatsInfo::record(void *ptr, std::size_t sz) {
+    const MemoryTracerGuard guard;
+
     auto time = std::chrono::high_resolution_clock::now();
     MemStatsInfo info;
     info.ptr = ptr;
@@ -278,6 +293,8 @@ using string = std::basic_string<char, std::char_traits<char>, MallocAllocator<c
 using stringstream = std::basic_stringstream<char, std::char_traits<char>, MallocAllocator<char>>;
 
 void print_legend() {
+    const MemoryTracerGuard guard;
+
     std::cout << "\nMemStats Legend:\n\n";
     std::cout << "  [{hist}]{max} | {accum}({count}) | {pos}\n\n";
     std::cout << "• hist:   Distribution of number of 'new' allocations for a given number of bytes\n";
@@ -322,6 +339,8 @@ void report_memory_leaks() {
 }
 
 void memstats_report(const char *report_name) {
+    const MemoryTracerGuard guard;
+
     auto lock = std::unique_lock<std::recursive_mutex>{memstats_lock};
     if (memstats_events.size() == 0)
         return;
@@ -462,25 +481,35 @@ void memstats_report(const char *report_name) {
 
 template<class T, class U = T>
 T exchange(T &obj, U &&new_value) {
+    const MemoryTracerGuard guard;
+
     T old_value = std::move(obj);
     obj = std::forward<U>(new_value);
     return old_value;
 }
 
 bool memstats_enable_thread_instrumentation() {
+    const MemoryTracerGuard guard;
+
     return exchange(memstats_instrumentation_thread, true);
 }
 
 bool memstats_disable_thread_instrumentation() {
+    const MemoryTracerGuard guard;
+
     return exchange(memstats_instrumentation_thread, false);
 }
 
 bool memstats_do_instrument() {
+    const MemoryTracerGuard guard;
+
     return memstats_instrumentation_thread and memstats_instrumentation_global.load(std::memory_order_acquire);
 }
 
 // instrumentation of new
 void *operator new(std::size_t sz) {
+    const MemoryTracerGuard guard;
+    
     // prevent multiple thread from allocating memory at the same time s.t. events are in order
     //std::lock_guard<std::mutex> lock(memstats_events_mutex);
 
@@ -496,11 +525,14 @@ void *operator new(std::size_t sz) {
     }
     if (memstats_do_instrument())
         MemStatsInfo::record(ptr, sz);
+    
     return ptr;
 }
 
 // instrumentation of new
 void *operator new(std::size_t sz, std::nothrow_t) noexcept {
+    const MemoryTracerGuard guard;
+
     try {
         return ::operator new(sz);
     }
@@ -511,6 +543,8 @@ void *operator new(std::size_t sz, std::nothrow_t) noexcept {
 
 // instrumentation of delete
 void operator delete(void *ptr) noexcept {
+    const MemoryTracerGuard guard;
+    
     // prevent multiple thread from deallocating memory at the same time s.t. events are in order
     //std::lock_guard<std::mutex> lock(memstats_events_mutex);
 
@@ -521,6 +555,8 @@ void operator delete(void *ptr) noexcept {
 
 // instrumentation of delete
 void operator delete(void *ptr, std::nothrow_t) noexcept {
+    const MemoryTracerGuard guard;
+
     try {
         return ::operator delete(ptr);
     }
