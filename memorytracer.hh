@@ -27,5 +27,33 @@ private:
     static std::mutex opMutex;
 };
 
+/** @brief Enable memory tracing for reads and writes of all memory blocks.
+ * @details Thread-local. Do not call during static- or dynamic-initialization phase.
+ * @return Whether memory tracing was enabled before to this call
+ */
+bool memstats_enable_memory_tracer();
+
+/** @brief Disable memory tracing for reads and writes of all memory blocks.
+ * @details Thread-local. Do not call during static- or dynamic-initialization phase.
+ * @return Whether memory tracing was enabled before to this call
+ */
+bool memstats_disable_memory_tracer();
+
+bool memstats_do_memory_tracing();
+
+class MemoryTracerGuard {
+    const bool was_memory_trace = memstats_disable_memory_tracer();
+
+    ~MemoryTracerGuard() {
+        if (was_memory_trace)
+            memstats_enable_memory_tracer();
+    }
+};
+
+int main(int argc, char *argv[]) {
+    MemoryTracer::Init();
+    MemoryTracer::Finalize();
+}
+
 
 #endif //MEMSTATS_MEMORYTRACER_HH
