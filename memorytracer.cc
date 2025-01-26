@@ -43,8 +43,35 @@ void MemoryTracer::Init() {
 }
 
 void MemoryTracer::Finalize() {
-    // TODO: Implement report generation
+	// Print histogram of the collected memory read/writes, grouped by the memory address and seperated write/read operations
+    std::sort(operations.begin(), operations.end(), [](const MemoryOperation& a, const MemoryOperation& b) {
+        return a.address < b.address;
+    });
 
+    uintptr_t lastAddress = 0;
+    size_t lastSize = 0;
+    size_t readCount = 0;
+    size_t writeCount = 0;
+    for (const MemoryOperation& op : operations) {
+        if (op.address != lastAddress) {
+            if (lastSize > 0) {
+                std::cout << "0x" << std::hex << lastAddress << std::dec << ": " << lastSize << " bytes, ";
+                std::cout << readCount << " reads, " << writeCount << " writes" << std::endl;
+            }
+            lastAddress = op.address;
+            lastSize = op.size;
+            readCount = 0;
+            writeCount = 0;
+        }
+        if (op.isWrite)
+            writeCount++;
+        else
+            readCount++;
+    }
+    if (lastSize > 0) {
+        std::cout << "0x" << std::hex << lastAddress << std::dec << ": " << lastSize << " bytes, ";
+        std::cout << readCount << " reads, " << writeCount << " writes" << std::endl;
+    }
 }
 
 const std::vector<MemoryOperation>& MemoryTracer::GetOperations() {
