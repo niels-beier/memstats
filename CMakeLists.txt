@@ -88,13 +88,38 @@ export(EXPORT memstats-targets
        NAMESPACE MemStats::
 )
 
-set(PINTOOL_HEADER_PATH "" CACHE PATH "")
+option(USE_MEMORY_TRACER "Enable memory tracing" OFF)
 
-if (NOT PINTOOL_HEADER_PATH)
-    message(FATAL_ERROR "For using memstats with the pintool, the path to pin.H is required.")
+if(USE_MEMORY_TRACER)
+    target_compile_definitions(memstats PRIVATE MEMSTATS_USE_MEMORY_TRACER)
+
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DPIN_CRT=1 -fno-stack-protector -funwind-tables -fasynchronous-unwind-tables -fno-rtti -DTARGET_IA32E -DHOST_IA32E -fPIC -DTARGET_LINUX -fabi-version=2 -faligned-new -fomit-frame-pointer -fno-strict-aliasing")
+
+    set(PINTOOL_PATH "" CACHE PATH "")
+
+    if (NOT PINTOOL_PATH)
+        message(FATAL_ERROR "For using memstats with memory tracing, the path to the include directory of the pintool is required.")
+    endif()
+
+    # Include directories
+    include_directories(${PINTOOL_PATH}/source/include/pin)
+    include_directories(${PINTOOL_PATH}/source/include/pin/gen)
+    include_directories(${PINTOOL_PATH}/extras/components/include)
+    include_directories(${PINTOOL_PATH}/extras/xed-intel64/include/xed)
+    include_directories(${PINTOOL_PATH}/source/tools/Utils)
+    include_directories(${PINTOOL_PATH}/source/tools/InstLib)
+    include_directories(SYSTEM ${PINTOOL_PATH}/extras/cxx/include)
+    include_directories(SYSTEM ${PINTOOL_PATH}/extras/crt/include)
+    include_directories(SYSTEM ${PINTOOL_PATH}/extras/crt/include/arch-x86_64)
+    include_directories(SYSTEM ${PINTOOL_PATH}/extras/crt/include/kernel/uapi)
+    include_directories(SYSTEM ${PINTOOL_PATH}/extras/crt/include/kernel/uapi/asm-x86)
+
+    set(SOURCES memorytracer.cc)
+
+    add_library(memory_tracer OBJECT ${SOURCES})
+
+    target_link_libraries(memory_tracer pin xed)
 endif()
-
-include_directories(${PINTOOL_HEADER_PATH})
 
 if(memstats_IS_TOP_LEVEL)
     add_executable(example_01 example_01.cc)
