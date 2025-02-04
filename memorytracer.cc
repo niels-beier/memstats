@@ -24,7 +24,6 @@ bool memstats_do_memory_tracing() {
 }
 
 std::vector<MemoryOperation> MemoryTracer::operations;
-std::set<std::pair<uintptr_t, uintptr_t>> MemoryTracer::excludedRanges;
 std::mutex opMutex;
 
 void MemoryTracer::Init() {
@@ -39,10 +38,11 @@ void MemoryTracer::Init() {
                            IARG_INST_PTR, IARG_MEMORYWRITE_EA, IARG_MEMORYWRITE_SIZE, IARG_THREAD_ID, IARG_END);
         }
     }, nullptr);
+    PIN_AddFiniFunction(MemoryTracer::Finalize, 0);
     PIN_StartProgram();
 }
 
-void MemoryTracer::Finalize() {
+void MemoryTracer::Finalize(INT32 code, VOID* v) {
 	// Print histogram of the collected memory read/writes, grouped by the memory address and seperated write/read operations
     std::sort(operations.begin(), operations.end(), [](const MemoryOperation& a, const MemoryOperation& b) {
         return a.address < b.address;
@@ -109,4 +109,9 @@ bool memstats_enable_memory_tracer() {
 
 bool memstats_disable_memory_tracer() {
     return exchange(memstats_memory_tracing, false);
+}
+
+int main(int argc, char *argv[]) {
+    MemoryTracer::Init();
+    return 0;
 }

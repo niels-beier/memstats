@@ -15,7 +15,7 @@ struct MemoryOperation {
 class MemoryTracer {
 public:
     static void Init();
-    static void Finalize();
+    static void Finalize(INT32 code, VOID *v);
     static const std::vector<MemoryOperation>& GetOperations();
 
 private:
@@ -23,7 +23,6 @@ private:
     static void RecordMemoryWrite(void* ip, void* addr, uint32_t size, uint32_t tid);
 
     static std::vector<MemoryOperation> operations;
-    static std::set<std::pair<uintptr_t, uintptr_t>> excludedRanges;
     static std::mutex opMutex;
 };
 
@@ -44,16 +43,12 @@ bool memstats_do_memory_tracing();
 class MemoryTracerGuard {
     const bool was_memory_trace = memstats_disable_memory_tracer();
 
+public:
     ~MemoryTracerGuard() {
         if (was_memory_trace)
             memstats_enable_memory_tracer();
     }
 };
-
-int main(int argc, char *argv[]) {
-    MemoryTracer::Init();
-    MemoryTracer::Finalize();
-}
 
 
 #endif //MEMSTATS_MEMORYTRACER_HH
