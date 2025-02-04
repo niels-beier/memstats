@@ -1,49 +1,44 @@
-#include "memorytracer.hh"
 #include "pin.H"
 #include <mutex>
 #include <algorithm>
-#include <cstring>
 #include <iostream>
 
-bool init_memstats_memory_tracing() {
-    if (char *ptr = std::getenv("MEMSTATS_MEMORY_TRACING")) {
-        if (std::strcmp(ptr, "true") == 0 or std::strcmp(ptr, "1") == 0)
-            return true;
-        if (std::strcmp(ptr, "false") == 0 or std::strcmp(ptr, "0") == 0)
-            return false;
-        std::cerr << "Option 'MEMSTATS_MEMORY_TRACING=" << ptr
-                  << "' not known. Fallback on default 'false'\n";
-    }
-    return false;
-}
+struct MemoryOperation {
+    uintptr_t address;
+    size_t size;
+    bool isWrite;
+    uint32_t threadId;
+};
 
-static thread_local bool memstats_memory_tracing = init_memstats_memory_tracing();
+static thread_local bool memstats_memory_tracing = true;
 
 bool memstats_do_memory_tracing() {
     return memstats_memory_tracing;
 }
 
-std::vector<MemoryOperation> MemoryTracer::operations;
+std::vector<MemoryOperation> operations;
 std::mutex opMutex;
 
-void MemoryTracer::Init() {
-    PIN_InitSymbols();
-    INS_AddInstrumentFunction([](INS ins, VOID* v) {
-        if (INS_IsMemoryRead(ins)) {
-            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)RecordMemoryRead,
-                           IARG_INST_PTR, IARG_MEMORYREAD_EA, IARG_MEMORYREAD_SIZE, IARG_THREAD_ID, IARG_END);
-        }
-        if (INS_IsMemoryWrite(ins)) {
-            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)RecordMemoryWrite,
-                           IARG_INST_PTR, IARG_MEMORYWRITE_EA, IARG_MEMORYWRITE_SIZE, IARG_THREAD_ID, IARG_END);
-        }
-    }, nullptr);
-    PIN_AddFiniFunction(MemoryTracer::Finalize, 0);
-    PIN_StartProgram();
+VOID RecordMemoryRead(VOID* ip, VOID* addr, uint32_t size, uint32_t tid) {
+    uintptr_t address = reinterpret_cast<uintptr_t>(addr);
+    if (!memstats_do_memory_tracing())
+        return;
+
+    std::lock_guard<std::mutex> lock(opMutex);
+    operations.push_back({address, size, false, tid});
 }
 
-void MemoryTracer::Finalize(INT32 code, VOID* v) {
-	// Print histogram of the collected memory read/writes, grouped by the memory address and seperated write/read operations
+VOID RecordMemoryWrite(VOID* ip, VOID* addr, uint32_t size, uint32_t tid) {
+    uintptr_t address = reinterpret_cast<uintptr_t>(addr);
+    if (!memstats_do_memory_tracing())
+        return;
+
+    std::lock_guard<std::mutex> lock(opMutex);
+    operations.push_back({address, size, true, tid});
+}
+
+VOID Finalize(INT32 code, VOID* v) {
+    // Print histogram of the collected memory read/writes, grouped by the memory address and seperated write/read operations
     std::sort(operations.begin(), operations.end(), [](const MemoryOperation& a, const MemoryOperation& b) {
         return a.address < b.address;
     });
@@ -74,26 +69,33 @@ void MemoryTracer::Finalize(INT32 code, VOID* v) {
     }
 }
 
-const std::vector<MemoryOperation>& MemoryTracer::GetOperations() {
+INT32 Usage() {
+    std::cerr << "This tool records memory read/write operations" << std::endl;
+    return 1;
+}
+
+INT32 Init(int argc, char *argv[]) {
+    PIN_InitSymbols();
+    if (PIN_Init(argc, argv))
+        return Usage();
+
+    INS_AddInstrumentFunction([](INS ins, VOID* v) {
+        if (INS_IsMemoryRead(ins)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)RecordMemoryRead,
+                           IARG_INST_PTR, IARG_MEMORYREAD_EA, IARG_MEMORYREAD_SIZE, IARG_THREAD_ID, IARG_END);
+        }
+        if (INS_IsMemoryWrite(ins)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)RecordMemoryWrite,
+                           IARG_INST_PTR, IARG_MEMORYWRITE_EA, IARG_MEMORYWRITE_SIZE, IARG_THREAD_ID, IARG_END);
+        }
+    }, nullptr);
+    PIN_AddFiniFunction(Finalize, 0);
+    PIN_StartProgram();
+    return 0;
+}
+
+const std::vector<MemoryOperation>& GetOperations() {
     return operations;
-}
-
-void MemoryTracer::RecordMemoryRead(void* ip, void* addr, uint32_t size, uint32_t tid) {
-    uintptr_t address = reinterpret_cast<uintptr_t>(addr);
-    if (!memstats_do_memory_tracing())
-        return;
-
-    std::lock_guard<std::mutex> lock(opMutex);
-    operations.push_back({address, size, false, tid});
-}
-
-void MemoryTracer::RecordMemoryWrite(void* ip, void* addr, uint32_t size, uint32_t tid) {
-    uintptr_t address = reinterpret_cast<uintptr_t>(addr);
-    if (!memstats_do_memory_tracing())
-        return;
-
-    std::lock_guard<std::mutex> lock(opMutex);
-    operations.push_back({address, size, true, tid});
 }
 
 template<class T, class U = T>
@@ -112,6 +114,5 @@ bool memstats_disable_memory_tracer() {
 }
 
 int main(int argc, char *argv[]) {
-    MemoryTracer::Init();
-    return 0;
+    return Init(argc, argv);
 }
