@@ -2,31 +2,26 @@
 #include "pin.H"
 #include <mutex>
 #include <algorithm>
-#include <cstring>
+#include <array>
 #include <iostream>
+#include <unordered_map>
 
-bool init_memstats_memory_tracing() {
-    if (char *ptr = std::getenv("MEMSTATS_MEMORY_TRACING")) {
-        if (std::strcmp(ptr, "true") == 0 or std::strcmp(ptr, "1") == 0)
-            return true;
-        if (std::strcmp(ptr, "false") == 0 or std::strcmp(ptr, "0") == 0)
-            return false;
-        std::cerr << "Option 'MEMSTATS_MEMORY_TRACING=" << ptr
-                  << "' not known. Fallback on default 'false'\n";
-    }
-    return false;
-}
-
-static thread_local bool memstats_memory_tracing = init_memstats_memory_tracing();
+static bool memstats_memory_tracing = true;
 
 bool memstats_do_memory_tracing() {
     return memstats_memory_tracing;
 }
 
 std::vector<MemoryOperation> MemoryTracer::operations;
-std::mutex opMutex;
 
-void MemoryTracer::Init() {
+int MemoryTracer::Init(int argc, char *argv[]) {
+
+    if( PIN_Init(argc,argv) )
+    {
+        std::cout << "Error PIN_Init" << std::endl;
+        return 1;
+    }
+
     PIN_InitSymbols();
     INS_AddInstrumentFunction([](INS ins, VOID* v) {
         if (INS_IsMemoryRead(ins)) {
@@ -40,37 +35,40 @@ void MemoryTracer::Init() {
     }, nullptr);
     PIN_AddFiniFunction(MemoryTracer::Finalize, 0);
     PIN_StartProgram();
+
+    return 0;
 }
 
 void MemoryTracer::Finalize(INT32 code, VOID* v) {
-	// Print histogram of the collected memory read/writes, grouped by the memory address and seperated write/read operations
-    std::sort(operations.begin(), operations.end(), [](const MemoryOperation& a, const MemoryOperation& b) {
-        return a.address < b.address;
-    });
+    static const std::array<const char *, 9> percentage_box{" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
+    static const int bins = 15;
 
-    uintptr_t lastAddress = 0;
-    size_t lastSize = 0;
-    size_t readCount = 0;
-    size_t writeCount = 0;
-    for (const MemoryOperation& op : operations) {
-        if (op.address != lastAddress) {
-            if (lastSize > 0) {
-                std::cout << "0x" << std::hex << lastAddress << std::dec << ": " << lastSize << " bytes, ";
-                std::cout << readCount << " reads, " << writeCount << " writes" << std::endl;
-            }
-            lastAddress = op.address;
-            lastSize = op.size;
-            readCount = 0;
-            writeCount = 0;
+    // Count the number of times each memory address is accessed seperately for reads and writes
+    std::unordered_map<uintptr_t, std::pair<int, int>> access_count;
+    for (const auto& op : operations) {
+        if (op.isWrite) {
+            access_count[op.address].second++;
+        } else {
+            access_count[op.address].first++;
         }
-        if (op.isWrite)
-            writeCount++;
-        else
-            readCount++;
     }
-    if (lastSize > 0) {
-        std::cout << "0x" << std::hex << lastAddress << std::dec << ": " << lastSize << " bytes, ";
-        std::cout << readCount << " reads, " << writeCount << " writes" << std::endl;
+
+    // Print a histogram of the number of times each memory address is accessed using the percentage box characters
+    for (const auto& [address, count] : access_count) {
+        std::cout << "0x" << std::hex << address << std::dec << ": ";
+        for (int i = 0; i < bins; i++) {
+            int total = count.first + count.second;
+            int read_percentage = (count.first * bins) / total;
+            int write_percentage = (count.second * bins) / total;
+            if (i < read_percentage) {
+                std::cout << percentage_box[std::min(read_percentage, 8)];
+            } else if (i < write_percentage) {
+                std::cout << percentage_box[std::min(write_percentage, 8)];
+            } else {
+                std::cout << " ";
+            }
+        }
+        std::cout << " | " << count.first << " reads, " << count.second << " writes" << std::endl;
     }
 }
 
@@ -79,20 +77,18 @@ const std::vector<MemoryOperation>& MemoryTracer::GetOperations() {
 }
 
 void MemoryTracer::RecordMemoryRead(void* ip, void* addr, uint32_t size, uint32_t tid) {
-    uintptr_t address = reinterpret_cast<uintptr_t>(addr);
+    auto address = reinterpret_cast<uintptr_t>(addr);
     if (!memstats_do_memory_tracing())
         return;
 
-    std::lock_guard<std::mutex> lock(opMutex);
     operations.push_back({address, size, false, tid});
 }
 
 void MemoryTracer::RecordMemoryWrite(void* ip, void* addr, uint32_t size, uint32_t tid) {
-    uintptr_t address = reinterpret_cast<uintptr_t>(addr);
+    auto address = reinterpret_cast<uintptr_t>(addr);
     if (!memstats_do_memory_tracing())
         return;
 
-    std::lock_guard<std::mutex> lock(opMutex);
     operations.push_back({address, size, true, tid});
 }
 
@@ -112,6 +108,6 @@ bool memstats_disable_memory_tracer() {
 }
 
 int main(int argc, char *argv[]) {
-    MemoryTracer::Init();
+    MemoryTracer::Init(argc, argv);
     return 0;
 }

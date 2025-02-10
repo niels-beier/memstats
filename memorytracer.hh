@@ -3,7 +3,6 @@
 
 #include <vector>
 #include <mutex>
-#include <set>
 
 struct MemoryOperation {
     uintptr_t address;
@@ -14,7 +13,7 @@ struct MemoryOperation {
 
 class MemoryTracer {
 public:
-    static void Init();
+    static int Init(int argc, char *argv[]);
     static void Finalize(INT32 code, VOID *v);
     static const std::vector<MemoryOperation>& GetOperations();
 
@@ -23,7 +22,6 @@ private:
     static void RecordMemoryWrite(void* ip, void* addr, uint32_t size, uint32_t tid);
 
     static std::vector<MemoryOperation> operations;
-    static std::mutex opMutex;
 };
 
 /** @brief Enable memory tracing for reads and writes of all memory blocks.
