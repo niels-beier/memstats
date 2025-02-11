@@ -12,6 +12,13 @@ option(USE_MEMORY_TRACER "Enable memory tracing" OFF)
 
 if(USE_MEMORY_TRACER)
     target_compile_definitions(memstats PRIVATE MEMSTATS_USE_MEMORY_TRACER)
+
+    set(PINTOOL_PATH "" CACHE PATH "")
+
+    if (NOT PINTOOL_PATH)
+        message(FATAL_ERROR "For using memstats with memory tracing, the path to the directory of pintool is required.")
+    endif()
+    execute_process(COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/memory_tracer/compile.sh ${PINTOOL_PATH})
 endif()
 
 include(GNUInstallDirs)
