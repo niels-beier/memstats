@@ -38,9 +38,6 @@
 #endif
 
 #include "memstats.hh"
-#if MEMSTATS_USE_MEMORY_TRACER
-#include "memorytracer.hh"
-#endif
 
 // all allocations within this library need to use malloc/free instad of new/delete
 template<class T>
@@ -51,7 +48,8 @@ public:
     constexpr MallocAllocator() noexcept = default;
 
     template<class U>
-    constexpr MallocAllocator(const MallocAllocator<U> &) noexcept {}
+    constexpr MallocAllocator(const MallocAllocator<U> &) noexcept {
+    }
 
     ~MallocAllocator() noexcept = default;
 
@@ -82,6 +80,25 @@ public:
     }
 };
 
+#if MEMSTATS_USE_MEMORY_TRACER
+void __attribute__((optimize("O0"))) disable_memory_tracer(void) {
+}
+
+void __attribute__((optimize("O0"))) enable_memory_tracer(void) {
+}
+
+class MemoryTracerGuard {
+public:
+    MemoryTracerGuard() {
+        disable_memory_tracer();
+    }
+
+    ~MemoryTracerGuard() {
+        enable_memory_tracer();
+    }
+};
+#endif
+
 struct MemStatsInfo {
     const void *ptr = nullptr;
     std::size_t size = 0;
@@ -105,7 +122,7 @@ bool init_memstats_instrumentation_thread() {
         if (std::strcmp(ptr, "false") == 0 or std::strcmp(ptr, "0") == 0)
             return false;
         std::cerr << "Option 'MEMSTATS_THREAD_INSTRUMENTATION_INIT=" << ptr
-                  << "' not known. Fallback on default 'false'\n";
+                << "' not known. Fallback on default 'false'\n";
     }
     return false;
 }
@@ -133,7 +150,7 @@ static std::recursive_mutex memstats_lock = {};
 #if __cpp_lib_constexpr_vector >= 201907L
 MEMSTATS_CONSTINIT
 #endif
-static std::vector<MemStatsInfo, MallocAllocator<MemStatsInfo>> memstats_events = {};
+static std::vector<MemStatsInfo, MallocAllocator<MemStatsInfo> > memstats_events = {};
 #endif
 std::mutex memstats_events_mutex;
 
@@ -143,7 +160,7 @@ static thread_local bool memstats_instrumentation_thread = init_memstats_instrum
 
 // guard thread-local variable to instrument further delets at exit
 bool init_memstats_instrumentation_thread_guard() {
-    #if MEMSTATS_USE_MEMORY_TRACER
+#if MEMSTATS_USE_MEMORY_TRACER
     const MemoryTracerGuard guard;
 #endif
 
@@ -162,7 +179,7 @@ MEMSTATS_CONSTINIT static std::atomic<bool> memstats_instrumentation_global{fals
 #endif
 
 bool init_memstats_instrumentation_guard() {
-    #if MEMSTATS_USE_MEMORY_TRACER
+#if MEMSTATS_USE_MEMORY_TRACER
     const MemoryTracerGuard guard;
 #endif
 
@@ -175,7 +192,7 @@ bool init_memstats_instrumentation_guard() {
             instrument = false;
         else
             std::cerr << "Option 'MEMSTATS_ENABLE_INSTRUMENTATION=" << ptr
-                      << "' not known. Fallback on default 'false'\n";
+                    << "' not known. Fallback on default 'false'\n";
     }
     memstats_instrumentation_global.store(instrument, std::memory_order_release);
     return instrument;
@@ -189,7 +206,7 @@ bool init_memstats_instrumentation_guard() {
 static bool memstats_instrumentation_guard = init_memstats_instrumentation_guard();
 
 bool init_memstats_at_exit() {
-    #if MEMSTATS_USE_MEMORY_TRACER
+#if MEMSTATS_USE_MEMORY_TRACER
     const MemoryTracerGuard guard;
 #endif
 
@@ -206,7 +223,7 @@ bool init_memstats_at_exit() {
                                    do_report_at_exit = false;
                                else
                                    std::cerr << "Option 'MEMSTATS_REPORT_AT_EXIT=" << ptr
-                                             << "' not known. Fallback on default 'true'\n";
+                                           << "' not known. Fallback on default 'true'\n";
                            }
                            if (do_report_at_exit)
                                memstats_report("default");
@@ -239,11 +256,13 @@ static const std::array<const char *, 4> memstats_str_precentage_circle{" ", "."
 static const std::array<const char *, 5> memstats_str_precentage_shadow{" ", "░", "▒", "▓", "█"};
 static const std::array<const char *, 5> memstats_str_precentage_wire{" ", "-", "~", "=", "#"};
 static const std::array<const char *, 9> memstats_str_precentage_box{" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
-static const std::array<const char *, 10> memstats_str_precentage_number{"0", "1", "2", "3", "4", "5", "6", "7", "8",
-                                                                         "9"};
+static const std::array<const char *, 10> memstats_str_precentage_number{
+    "0", "1", "2", "3", "4", "5", "6", "7", "8",
+    "9"
+};
 
 std::pair<char const *const *, std::size_t> memstats_str_hist_representation() {
-    #if MEMSTATS_USE_MEMORY_TRACER
+#if MEMSTATS_USE_MEMORY_TRACER
     const MemoryTracerGuard guard;
 #endif
 
@@ -267,15 +286,14 @@ std::pair<char const *const *, std::size_t> memstats_str_hist_representation() {
 }
 
 unsigned short memstats_bins() {
-    #if MEMSTATS_USE_MEMORY_TRACER
+#if MEMSTATS_USE_MEMORY_TRACER
     const MemoryTracerGuard guard;
 #endif
 
     if (const char *ptr = std::getenv("MEMSTATS_BINS")) {
         try {
             return std::stoi(ptr);
-        }
-        catch (...) {
+        } catch (...) {
             std::cerr << "Option 'MEMSTATS_BINS=" << ptr << "' not known. Fallback on default '15'\n";
         }
     }
@@ -283,7 +301,7 @@ unsigned short memstats_bins() {
 }
 
 void MemStatsInfo::record(void *ptr, std::size_t sz) {
-    #if MEMSTATS_USE_MEMORY_TRACER
+#if MEMSTATS_USE_MEMORY_TRACER
     const MemoryTracerGuard guard;
 #endif
 
@@ -303,12 +321,13 @@ void MemStatsInfo::record(void *ptr, std::size_t sz) {
 }
 
 template<class Key, class T>
-using unordered_map = std::unordered_map<Key, T, std::hash<Key>, std::equal_to<Key>, MallocAllocator<std::pair<const Key, T>>>;
-using string = std::basic_string<char, std::char_traits<char>, MallocAllocator<char>>;
-using stringstream = std::basic_stringstream<char, std::char_traits<char>, MallocAllocator<char>>;
+using unordered_map = std::unordered_map<Key, T, std::hash<Key>, std::equal_to<Key>, MallocAllocator<std::pair<const Key
+    , T> > >;
+using string = std::basic_string<char, std::char_traits<char>, MallocAllocator<char> >;
+using stringstream = std::basic_stringstream<char, std::char_traits<char>, MallocAllocator<char> >;
 
 void print_legend() {
-    #if MEMSTATS_USE_MEMORY_TRACER
+#if MEMSTATS_USE_MEMORY_TRACER
     const MemoryTracerGuard guard;
 #endif
 
@@ -325,9 +344,9 @@ void print_legend() {
     double per_width = 100. / str_precentage.second;
     for (std::size_t i = 0; i != str_precentage.second; ++i)
         std::cout << "• \'" << str_precentage.first[i] << "\' -> [" << std::fixed
-                  << std::setw(4) << std::setprecision(1) << i * per_width
-                  << "%, " << std::setw(5) << (i + 1) * per_width << '%'
-                  << (i + 1 == str_precentage.second ? ']' : ')') << std::endl;
+                << std::setw(4) << std::setprecision(1) << i * per_width
+                << "%, " << std::setw(5) << (i + 1) * per_width << '%'
+                << (i + 1 == str_precentage.second ? ']' : ')') << std::endl;
 }
 
 void report_memory_leaks() {
@@ -347,7 +366,7 @@ void report_memory_leaks() {
 
         if (!freed) {
             std::cout << "Pointer " << memstats_events[i].ptr << " was never freed in Thread "
-                      << memstats_events[i].thread << "." << std::endl;
+                    << memstats_events[i].thread << "." << std::endl;
 #if MEMSTAT_HAVE_STACKTRACE
             std::cout << "Current stacktrace:\n" << memstats_events[i].stacktrace << std::endl;
 #endif
@@ -356,7 +375,7 @@ void report_memory_leaks() {
 }
 
 void memstats_report(const char *report_name) {
-    #if MEMSTATS_USE_MEMORY_TRACER
+#if MEMSTATS_USE_MEMORY_TRACER
     const MemoryTracerGuard guard;
 #endif
 
@@ -371,7 +390,7 @@ void memstats_report(const char *report_name) {
     };
     Stats global_stats;
     unordered_map<std::thread::id, Stats> thread_stats;
-    unordered_map<const void *, unordered_map<std::thread::id, std::pair<int, bool>>> ptr_collec;
+    unordered_map<const void *, unordered_map<std::thread::id, std::pair<int, bool> > > ptr_collec;
     struct PtrStats {
         int times_freed;
         const void *ptr;
@@ -434,7 +453,7 @@ void memstats_report(const char *report_name) {
     const auto str_precentage = memstats_str_hist_representation();
     const auto bins = memstats_bins();
     auto format_histogram = [&](const Stats &stats) {
-        std::vector<std::size_t, MallocAllocator<std::size_t>> hist(bins, 0);
+        std::vector<std::size_t, MallocAllocator<std::size_t> > hist(bins, 0);
         std::size_t max_size = 0;
         for (const auto &frec: stats.size_freq) {
             std::size_t size = frec.first, count = frec.second;
@@ -455,16 +474,16 @@ void memstats_report(const char *report_name) {
     };
 
     std::cout << format_histogram(global_stats) << " | " << std::right
-              << std::setw(6) << bytes_to_string(global_stats.size) << '('
-              << std::left << std::setw(5) << int_to_string(global_stats.count)
-              << ") | Total\n";
+            << std::setw(6) << bytes_to_string(global_stats.size) << '('
+            << std::left << std::setw(5) << int_to_string(global_stats.count)
+            << ") | Total\n";
 
     for (const auto &pair: thread_stats)
         if (pair.second.size) {
             std::cout << format_histogram(pair.second) << " | " << std::right
-                      << std::setw(6) << bytes_to_string(pair.second.size) << '('
-                      << std::left << std::setw(5) << int_to_string(pair.second.count)
-                      << ") | Thread " << pair.first << std::endl;
+                    << std::setw(6) << bytes_to_string(pair.second.size) << '('
+                    << std::left << std::setw(5) << int_to_string(pair.second.count)
+                    << ") | Thread " << pair.first << std::endl;
         }
 
 #if MEMSTAT_HAVE_STACKTRACE
@@ -500,7 +519,7 @@ void memstats_report(const char *report_name) {
 
 template<class T, class U = T>
 T exchange(T &obj, U &&new_value) {
-    #if MEMSTATS_USE_MEMORY_TRACER
+#if MEMSTATS_USE_MEMORY_TRACER
     const MemoryTracerGuard guard;
 #endif
 
@@ -510,7 +529,7 @@ T exchange(T &obj, U &&new_value) {
 }
 
 bool memstats_enable_thread_instrumentation() {
-    #if MEMSTATS_USE_MEMORY_TRACER
+#if MEMSTATS_USE_MEMORY_TRACER
     const MemoryTracerGuard guard;
 #endif
 
@@ -518,7 +537,7 @@ bool memstats_enable_thread_instrumentation() {
 }
 
 bool memstats_disable_thread_instrumentation() {
-    #if MEMSTATS_USE_MEMORY_TRACER
+#if MEMSTATS_USE_MEMORY_TRACER
     const MemoryTracerGuard guard;
 #endif
 
@@ -526,7 +545,7 @@ bool memstats_disable_thread_instrumentation() {
 }
 
 bool memstats_do_instrument() {
-    #if MEMSTATS_USE_MEMORY_TRACER
+#if MEMSTATS_USE_MEMORY_TRACER
     const MemoryTracerGuard guard;
 #endif
 
@@ -535,10 +554,10 @@ bool memstats_do_instrument() {
 
 // instrumentation of new
 void *operator new(std::size_t sz) {
-    #if MEMSTATS_USE_MEMORY_TRACER
+#if MEMSTATS_USE_MEMORY_TRACER
     const MemoryTracerGuard guard;
 #endif
-    
+
     // prevent multiple thread from allocating memory at the same time s.t. events are in order
     //std::lock_guard<std::mutex> lock(memstats_events_mutex);
 
@@ -554,30 +573,29 @@ void *operator new(std::size_t sz) {
     }
     if (memstats_do_instrument())
         MemStatsInfo::record(ptr, sz);
-    
+
     return ptr;
 }
 
 // instrumentation of new
 void *operator new(std::size_t sz, std::nothrow_t) noexcept {
-    #if MEMSTATS_USE_MEMORY_TRACER
+#if MEMSTATS_USE_MEMORY_TRACER
     const MemoryTracerGuard guard;
 #endif
 
     try {
         return ::operator new(sz);
-    }
-    catch (...) {
+    } catch (...) {
     }
     return nullptr;
 }
 
 // instrumentation of delete
 void operator delete(void *ptr) noexcept {
-    #if MEMSTATS_USE_MEMORY_TRACER
+#if MEMSTATS_USE_MEMORY_TRACER
     const MemoryTracerGuard guard;
 #endif
-    
+
     // prevent multiple thread from deallocating memory at the same time s.t. events are in order
     //std::lock_guard<std::mutex> lock(memstats_events_mutex);
 
@@ -588,13 +606,12 @@ void operator delete(void *ptr) noexcept {
 
 // instrumentation of delete
 void operator delete(void *ptr, std::nothrow_t) noexcept {
-    #if MEMSTATS_USE_MEMORY_TRACER
+#if MEMSTATS_USE_MEMORY_TRACER
     const MemoryTracerGuard guard;
 #endif
 
     try {
         return ::operator delete(ptr);
-    }
-    catch (...) {
+    } catch (...) {
     }
 }

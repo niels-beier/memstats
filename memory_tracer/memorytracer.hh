@@ -38,15 +38,4 @@ bool memstats_disable_memory_tracer();
 
 bool memstats_do_memory_tracing();
 
-class MemoryTracerGuard {
-    const bool was_memory_trace = memstats_disable_memory_tracer();
-
-public:
-    ~MemoryTracerGuard() {
-        if (was_memory_trace)
-            memstats_enable_memory_tracer();
-    }
-};
-
-
 #endif //MEMSTATS_MEMORYTRACER_HH
