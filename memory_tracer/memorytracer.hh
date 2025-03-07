@@ -11,11 +11,19 @@ struct MemoryOperation {
     uint32_t threadId;
 };
 
+struct MallocOperation {
+    void* address;
+    size_t size;
+};
+
 class MemoryTracer {
 public:
     static int Init(int argc, char *argv[]);
     static void Finalize(INT32 code, VOID *v);
     static const std::vector<MemoryOperation>& GetOperations();
+    static const std::vector<MallocOperation>& GetMallocOperations();
+
+    static std::vector<MallocOperation> mallocOperations;
 
 private:
     static void RecordMemoryRead(void* ip, void* addr, uint32_t size, uint32_t tid);
