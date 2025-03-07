@@ -119,4 +119,7 @@ if(memstats_IS_TOP_LEVEL)
 
     add_executable(example_05 example_05.cc)
     target_link_libraries(example_05 PUBLIC MemStats::MemStats)
+
+    add_executable(example_06 example_06.cc)
+    target_link_libraries(example_05 PUBLIC MemStats::MemStats)
 endif()
