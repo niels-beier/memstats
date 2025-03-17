@@ -148,7 +148,6 @@ void MemoryTracer::Finalize(INT32 code, VOID* v) {
         allocations[op.address] = op.size;
     }
     for (const auto& op : MemoryTracer::operations) {
-        allocations.erase(reinterpret_cast<void*>(op.address));
         for (auto it = op.address; it < op.address + op.size; it += 8) {
             allocations.erase(reinterpret_cast<void*>(it));
         }
