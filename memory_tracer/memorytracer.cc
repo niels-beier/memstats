@@ -149,6 +149,9 @@ void MemoryTracer::Finalize(INT32 code, VOID* v) {
     }
     for (const auto& op : MemoryTracer::operations) {
         allocations.erase(reinterpret_cast<void*>(op.address));
+        for (auto it = op.address; it < op.address + op.size; it += 8) {
+            allocations.erase(reinterpret_cast<void*>(it));
+        }
     }
     for (const auto& [address, size] : allocations) {
         std::cout << "Allocation at " << address << " (" << size << " bytes) was never used" << std::endl;
