@@ -1,5 +1,4 @@
 volatile void * do_not_optimize;
-volatile int do_not_optimize2;
 
 int main() {
     // Allocate array of arrays
@@ -10,9 +9,12 @@ int main() {
         do_not_optimize = ptr[i];
     }
 
-    ptr[1][1] = 42;
+    ptr[1][0] = 42;
 
-    do_not_optimize2 = ptr[1][1];
+    for (int i = 0; i < 5; i++) {
+        delete[] ptr[i];
+    }
+    delete[] ptr;
 
     return 0;
 }
